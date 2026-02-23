@@ -499,5 +499,77 @@ ${details(snapshot)}`)
 				}
 			);
 		});
+
+		it("should log warnings for non-ENOENT file errors during snapshotting", (done) => {
+			const fs = createFs();
+
+			// Mock stat to return EACCES for a specific file
+			const originalStat = fs.stat.bind(fs);
+			jest.spyOn(fs, "stat").mockImplementation((path, callback) => {
+				if (path === "/path/file.txt") {
+					const err = new Error("EACCES: permission denied");
+					err.code = "EACCES";
+					return callback(err);
+				}
+				return originalStat(path, callback);
+			});
+
+			const fsInfo = createFsInfo(fs);
+			fsInfo.createSnapshot(
+				Date.now() + 10000,
+				["/path/file.txt"],
+				[],
+				[],
+				["timestamp", { timestamp: true }],
+				(err, snapshot) => {
+					// Snapshot should be null (error path)
+					expect(snapshot).toBeNull();
+					// Should have logged a warning for non-ENOENT error
+					const hasWarning =
+						fsInfo.warn &&
+						fsInfo.warn.some((msg) =>
+							msg.includes("non-recoverable error")
+						);
+					expect(hasWarning).toBe(true);
+					done();
+				}
+			);
+		});
+
+		it("should not log warnings for ENOENT errors during snapshotting", (done) => {
+			const fs = createFs();
+
+			// Mock stat to return ENOENT
+			const originalStat = fs.stat.bind(fs);
+			jest.spyOn(fs, "stat").mockImplementation((path, callback) => {
+				if (path === "/path/file.txt") {
+					const err = new Error("ENOENT: no such file or directory");
+					err.code = "ENOENT";
+					return callback(err);
+				}
+				return originalStat(path, callback);
+			});
+
+			const fsInfo = createFsInfo(fs);
+			fsInfo.createSnapshot(
+				Date.now() + 10000,
+				["/path/file.txt"],
+				[],
+				[],
+				["timestamp", { timestamp: true }],
+				(err, snapshot) => {
+					// Snapshot should be null (error path)
+					expect(snapshot).toBeNull();
+					// Should NOT have logged a warning for ENOENT
+					const hasWarning =
+						fsInfo.warn &&
+						fsInfo.warn.some((msg) =>
+							msg.includes("non-recoverable error")
+						);
+					expect(hasWarning).toBeFalsy();
+					done();
+				}
+			);
+		});
 	});
 });
